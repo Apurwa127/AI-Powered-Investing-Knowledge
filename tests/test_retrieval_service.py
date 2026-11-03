@@ -7,14 +7,17 @@ from app.retrieval_service import RetrievalService
 from app.embedding_service import EmbeddingService
 
 
+# ==========================================
+# UNIT TESTS (Mock-based)
+# ==========================================
+
 def test_retrieve_documents():
 
     # Mock the embedding service
     embedding_service = MagicMock()
-
     embedding_service.generate_embedding.return_value = [0.1] * 1536
 
-    # Create the retrieval service
+    # Create retrieval service
     retrieval_service = RetrievalService(embedding_service)
 
     # Mock Azure AI Search response
@@ -65,7 +68,6 @@ def test_retrieve_documents_company_filter():
     embedding_service.generate_embedding.return_value = [0.1] * 1536
 
     retrieval_service = RetrievalService(embedding_service)
-
     retrieval_service.search_client.search = MagicMock(return_value=[])
 
     retrieval_service.retrieve_documents(
@@ -84,7 +86,6 @@ def test_retrieve_documents_fiscal_year_filter():
     embedding_service.generate_embedding.return_value = [0.1] * 1536
 
     retrieval_service = RetrievalService(embedding_service)
-
     retrieval_service.search_client.search = MagicMock(return_value=[])
 
     retrieval_service.retrieve_documents(
@@ -103,7 +104,6 @@ def test_retrieve_documents_without_filters():
     embedding_service.generate_embedding.return_value = [0.1] * 1536
 
     retrieval_service = RetrievalService(embedding_service)
-
     retrieval_service.search_client.search = MagicMock(return_value=[])
 
     retrieval_service.retrieve_documents(
@@ -129,32 +129,85 @@ def test_retrieve_documents_invalid_top_k():
     embedding_service = MagicMock()
     retrieval_service = RetrievalService(embedding_service)
 
-    with pytest.raises(ValueError, match="top_k must be greater than zero"):
+    with pytest.raises(
+        ValueError,
+        match="top_k must be greater than zero"
+    ):
         retrieval_service.retrieve_documents(
             "What was Apple's revenue?",
             top_k=0
         )
 
 
-def test_live_retrieval():
+# ==========================================
+# LIVE INTEGRATION TESTS (Azure AI Search)
+# ==========================================
 
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "question, expected_keywords",
+    [
+        (
+            "What was Apple's total revenue in 2024?",
+            ["net sales"]
+        ),
+        (
+            "What was Apple's net income in 2024?",
+            ["net income"]
+        ),
+        (
+            "What were Apple's operating expenses in 2024?",
+            ["operating expenses"]
+        ),
+        (
+            "How much revenue did Apple's Services segment generate in 2024?",
+            ["services"]
+        )
+    ]
+)
+def test_live_retrieval_quality(question, expected_keywords):
+
+    # Step 1: Initialize embedding service
     embedding_service = EmbeddingService()
 
-    retrieval_service = RetrievalService(embedding_service)
+    # Step 2: Initialize retrieval service
+    retrieval_service = RetrievalService(
+        embedding_service=embedding_service
+    )
 
+    # Step 3: Retrieve relevant documents
     results = retrieval_service.retrieve_documents(
-        question="What were Apple's major sources of revenue in 2024?",
+        question=question,
         top_k=3,
         company="Apple",
         fiscal_year=2024
     )
 
-    print("\nRetrieved Apple 2024 documents:")
+    # Step 4: Display retrieval results
+    print(f"\nQuestion: {question}")
+
+    assert results, "No documents retrieved"
+
+    print("\nRetrieved documents:")
 
     for document in results:
         print("\nCompany:", document["company"])
+        print("Fiscal Year:", document["fiscal_year"])
         print("Page:", document["page_number"])
         print("Score:", document["score"])
         print("Content:", document["content"][:500])
 
-    assert len(results) > 0
+    # Step 5: Combine retrieved content
+    retrieved_content = " ".join(
+        document["content"].lower()
+        for document in results
+    )
+
+    # Step 6: Verify expected keywords
+    assert any(
+        keyword in retrieved_content
+        for keyword in expected_keywords
+    ), (
+        f"Expected keywords {expected_keywords} "
+        f"were not found in retrieved documents"
+    )
