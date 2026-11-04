@@ -24,11 +24,12 @@ def test_retrieve_documents():
     retrieval_service.search_client.search = MagicMock(
         return_value=[
             {
+                "id": "test_chunk_001",
                 "content": "Apple reported annual revenue of $391 billion.",
                 "company": "Apple",
                 "fiscal_year": 2024,
                 "source": "2024_Apple.pdf",
-                "page_number": 10,
+                "page_number": 16,
                 "document_id": "apple_2024",
                 "@search.score": 0.95
             }
@@ -45,6 +46,7 @@ def test_retrieve_documents():
 
     # Verify results
     assert len(results) == 1
+    assert results[0]["id"] == "test_chunk_001"
     assert results[0]["company"] == "Apple"
     assert results[0]["fiscal_year"] == 2024
     assert results[0]["score"] == 0.95
@@ -167,15 +169,15 @@ def test_retrieve_documents_invalid_top_k():
 )
 def test_live_retrieval_quality(question, expected_keywords):
 
-    # Step 1: Initialize embedding service
+    # Initialize embedding service
     embedding_service = EmbeddingService()
 
-    # Step 2: Initialize retrieval service
+    # Initialize retrieval service
     retrieval_service = RetrievalService(
         embedding_service=embedding_service
     )
 
-    # Step 3: Retrieve relevant documents
+    # Retrieve relevant documents
     results = retrieval_service.retrieve_documents(
         question=question,
         top_k=3,
@@ -183,7 +185,6 @@ def test_live_retrieval_quality(question, expected_keywords):
         fiscal_year=2024
     )
 
-    # Step 4: Display retrieval results
     print(f"\nQuestion: {question}")
 
     assert results, "No documents retrieved"
@@ -191,19 +192,20 @@ def test_live_retrieval_quality(question, expected_keywords):
     print("\nRetrieved documents:")
 
     for document in results:
-        print("\nCompany:", document["company"])
+        print("\nChunk ID:", document["id"])
+        print("Company:", document["company"])
         print("Fiscal Year:", document["fiscal_year"])
         print("Page:", document["page_number"])
         print("Score:", document["score"])
         print("Content:", document["content"][:500])
 
-    # Step 5: Combine retrieved content
+    # Combine retrieved content
     retrieved_content = " ".join(
         document["content"].lower()
         for document in results
     )
 
-    # Step 6: Verify expected keywords
+    # Verify expected keywords
     assert any(
         keyword in retrieved_content
         for keyword in expected_keywords

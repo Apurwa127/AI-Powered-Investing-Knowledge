@@ -73,6 +73,7 @@ class RetrievalService:
             vector_queries=[vector_query],
             filter=search_filter,
             select=[
+                "id",
                 "content",
                 "company",
                 "fiscal_year",
@@ -87,6 +88,7 @@ class RetrievalService:
 
         for result in results:
             documents.append({
+                "id": result["id"],
                 "content": result["content"],
                 "company": result.get("company"),
                 "fiscal_year": result.get("fiscal_year"),
