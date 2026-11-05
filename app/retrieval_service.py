@@ -45,17 +45,19 @@ class RetrievalService:
         if top_k <= 0:
             raise ValueError("top_k must be greater than zero")
 
-        # Generate embedding for the user's question
-        query_embedding = self.embedding_service.generate_embedding(question)
+        # Step 1: Generate embedding for the user's question
+        query_embedding = self.embedding_service.generate_embedding(
+            question
+        )
 
-        # Configure vector search
+        # Step 2: Configure vector search
         vector_query = VectorizedQuery(
             vector=query_embedding,
             k_nearest_neighbors=top_k,
             fields="content_vector"
         )
 
-        # Build optional metadata filters
+        # Step 3: Build optional metadata filters
         filters = []
 
         if company:
@@ -67,9 +69,9 @@ class RetrievalService:
 
         search_filter = " and ".join(filters) if filters else None
 
-        # Search Azure AI Search
+        # Step 4: Search Azure AI Search
         results = self.search_client.search(
-            search_text=None,
+            search_text=question,
             vector_queries=[vector_query],
             filter=search_filter,
             select=[
@@ -84,9 +86,11 @@ class RetrievalService:
             top=top_k
         )
 
+        # Step 5: Format retrieved documents
         documents = []
 
         for result in results:
+
             documents.append({
                 "id": result["id"],
                 "content": result["content"],
