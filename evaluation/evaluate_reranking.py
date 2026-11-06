@@ -21,12 +21,17 @@ def main():
     baseline_results = []
     reranked_results = []
 
-    # Evaluate every question
+    # Operating expenses chunk ID
+    operating_expenses_chunk_id = (
+        "f5a3255936b45fae9cd2726e621dd82da6cf60fa3fb56445129af4b195008da3"
+    )
+
     for item in evaluation_dataset:
 
         print("\n" + "=" * 75)
         print("Question:", item["question"])
         print("Company:", item["company"])
+        print("Fiscal Year:", item["fiscal_year"])
 
         # ------------------------------------------------
         # Experiment A: Hybrid retrieval without reranking
@@ -73,14 +78,49 @@ def main():
             print(f"\nRank: {rank}")
             print("ID:", document["id"])
             print("Page:", document["page_number"])
-            print("Score:", document["rerank_score"])
+            print("Rerank Score:", document["rerank_score"])
             print("Content:", document["content"][:500])
 
-        # Select top 3 reranked documents
+        # ------------------------------------------------
+        # Inspect operating expenses chunk
+        # ------------------------------------------------
+
+        if item["question"] == "What were Apple's operating expenses in 2024?":
+
+            print("\n" + "=" * 75)
+            print("OPERATING EXPENSES CHUNK - FULL CONTENT")
+            print("=" * 75)
+
+            target_found = False
+
+            for document in all_ranked_documents:
+
+                if document["id"] == operating_expenses_chunk_id:
+
+                    target_found = True
+
+                    print("Chunk ID:", document["id"])
+                    print("Page:", document["page_number"])
+                    print("Rerank Score:", document["rerank_score"])
+                    print("\nFull Content:\n")
+                    print(document["content"])
+
+                    break
+
+            if not target_found:
+                print(
+                    "Operating expenses chunk was not found "
+                    "among the top retrieved candidates."
+                )
+
+        # ------------------------------------------------
+        # Select top K reranked documents
+        # ------------------------------------------------
+
         reranked_documents = all_ranked_documents[:k]
 
         # ------------------------------------------------
-        # Prepare ground-truth IDs
+        # Prepare ground-truth and retrieved IDs
         # ------------------------------------------------
 
         relevant_ids = item["relevant_chunk_ids"]
@@ -121,6 +161,9 @@ def main():
         # ------------------------------------------------
         # Display individual question results
         # ------------------------------------------------
+
+        print("\nRelevant IDs:")
+        print(relevant_ids)
 
         print("\nBaseline retrieved IDs:")
         print(baseline_ids)
