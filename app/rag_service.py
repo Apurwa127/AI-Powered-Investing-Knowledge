@@ -1,9 +1,9 @@
-from app.retrieval_service import RetrievalService
-from app.llm_service import LLMService
+
 import re
 
 from app.retrieval_service import RetrievalService
 from app.llm_service import LLMService
+from app.reranker import Reranker
 
 
 class RAGService:
@@ -11,42 +11,71 @@ class RAGService:
     def __init__(
         self,
         retrieval_service: RetrievalService,
-        llm_service: LLMService
+        llm_service: LLMService,
+        reranker: Reranker
     ):
 
         self.retrieval_service = retrieval_service
         self.llm_service = llm_service
+        self.reranker = reranker
 
     def ask_question(
-            self,
-            question: str,
-            company: str | None = None,
-            fiscal_year: int | None = None,
-            top_k: int = 3
+        self,
+        question: str,
+        company: str | None = None,
+        fiscal_year: int | None = None,
+        top_k: int = 3,
+        retrieval_k: int = 10
     ) -> dict:
 
+        # Validate inputs
         if not question.strip():
             raise ValueError("Question cannot be empty")
 
         if top_k <= 0:
             raise ValueError("top_k must be greater than zero")
 
-        # Step 1: Retrieve relevant documents
+        if retrieval_k <= 0:
+            raise ValueError("retrieval_k must be greater than zero")
+
+        if retrieval_k < top_k:
+            raise ValueError(
+                "retrieval_k must be greater than or equal to top_k"
+            )
+
+        # Step 1: Retrieve candidate documents
         retrieved_documents = self.retrieval_service.retrieve_documents(
             question=question,
-            top_k=top_k,
+            top_k=retrieval_k,
             company=company,
-            fiscal_year=fiscal_year
+            fiscal_year=fiscal_year,
+            search_mode="hybrid"
         )
 
         if not retrieved_documents:
             return {
                 "question": question,
                 "answer": "No relevant information was found in the available documents.",
-                "sources": []
+                "sources": [],
+                "invalid_citations": []
             }
 
-        # Step 2: Combine retrieved content into context
+        # Step 2: Rerank retrieved documents
+        reranked_documents = self.reranker.rerank(
+            question=question,
+            documents=retrieved_documents,
+            top_k=top_k
+        )
+
+        if not reranked_documents:
+            return {
+                "question": question,
+                "answer": "No relevant information was found after reranking.",
+                "sources": [],
+                "invalid_citations": []
+            }
+
+        # Step 3: Combine reranked content into context
         context = "\n\n".join(
             f"""
             Source: {document['source']}
@@ -57,31 +86,34 @@ class RAGService:
             Content:
             {document['content']}
             """
-            for document in retrieved_documents
+            for document in reranked_documents
         )
 
-        # Step 3: Generate an answer using the LLM
+        # Step 4: Generate an answer using the LLM
         answer = self.llm_service.generate_answer(
             question=question,
             context=context
         )
+
+        # Step 5: Validate citations
         invalid_citations = self.validate_sources(
             answer=answer,
-            retrieved_documents=retrieved_documents
+            retrieved_documents=reranked_documents
         )
 
-        # Step 4: Extract source information
+        # Step 6: Extract source information
         sources = [
             {
                 "company": document["company"],
                 "fiscal_year": document["fiscal_year"],
                 "source": document["source"],
-                "page_number": document["page_number"]
+                "page_number": document["page_number"],
+                "rerank_score": document["rerank_score"]
             }
-            for document in retrieved_documents
+            for document in reranked_documents
         ]
 
-        # Step 5: Return the final result
+        # Step 7: Return final result
         return {
             "question": question,
             "answer": answer,
@@ -90,9 +122,9 @@ class RAGService:
         }
 
     def validate_sources(
-            self,
-            answer: str,
-            retrieved_documents: list[dict]
+        self,
+        answer: str,
+        retrieved_documents: list[dict]
     ) -> list[str]:
 
         valid_sources = {

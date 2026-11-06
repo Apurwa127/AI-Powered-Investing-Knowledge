@@ -36,28 +36,23 @@ class RetrievalService:
         question: str,
         top_k: int = 3,
         company: str | None = None,
-        fiscal_year: int | None = None
+        fiscal_year: int | None = None,
+        search_mode: str = "hybrid"
     ) -> list[dict]:
 
+        # Validate inputs
         if not question.strip():
             raise ValueError("Question cannot be empty")
 
         if top_k <= 0:
             raise ValueError("top_k must be greater than zero")
 
-        # Step 1: Generate embedding for the user's question
-        query_embedding = self.embedding_service.generate_embedding(
-            question
-        )
+        if search_mode not in ["vector", "keyword", "hybrid"]:
+            raise ValueError(
+                "search_mode must be 'vector', 'keyword', or 'hybrid'"
+            )
 
-        # Step 2: Configure vector search
-        vector_query = VectorizedQuery(
-            vector=query_embedding,
-            k_nearest_neighbors=top_k,
-            fields="content_vector"
-        )
-
-        # Step 3: Build optional metadata filters
+        # Build optional metadata filters
         filters = []
 
         if company:
@@ -69,24 +64,82 @@ class RetrievalService:
 
         search_filter = " and ".join(filters) if filters else None
 
-        # Step 4: Search Azure AI Search
-        results = self.search_client.search(
-            search_text=question,
-            vector_queries=[vector_query],
-            filter=search_filter,
-            select=[
-                "id",
-                "content",
-                "company",
-                "fiscal_year",
-                "source",
-                "page_number",
-                "document_id"
-            ],
-            top=top_k
-        )
+        # Execute search based on selected mode
 
-        # Step 5: Format retrieved documents
+        if search_mode == "vector":
+
+            query_embedding = self.embedding_service.generate_embedding(
+                question
+            )
+
+            vector_query = VectorizedQuery(
+                vector=query_embedding,
+                k_nearest_neighbors=top_k,
+                fields="content_vector"
+            )
+
+            results = self.search_client.search(
+                search_text=None,
+                vector_queries=[vector_query],
+                filter=search_filter,
+                select=[
+                    "id",
+                    "content",
+                    "company",
+                    "fiscal_year",
+                    "source",
+                    "page_number",
+                    "document_id"
+                ],
+                top=top_k
+            )
+
+        elif search_mode == "keyword":
+
+            results = self.search_client.search(
+                search_text=question,
+                filter=search_filter,
+                select=[
+                    "id",
+                    "content",
+                    "company",
+                    "fiscal_year",
+                    "source",
+                    "page_number",
+                    "document_id"
+                ],
+                top=top_k
+            )
+
+        else:  # hybrid search
+
+            query_embedding = self.embedding_service.generate_embedding(
+                question
+            )
+
+            vector_query = VectorizedQuery(
+                vector=query_embedding,
+                k_nearest_neighbors=top_k,
+                fields="content_vector"
+            )
+
+            results = self.search_client.search(
+                search_text=question,
+                vector_queries=[vector_query],
+                filter=search_filter,
+                select=[
+                    "id",
+                    "content",
+                    "company",
+                    "fiscal_year",
+                    "source",
+                    "page_number",
+                    "document_id"
+                ],
+                top=top_k
+            )
+
+        # Format retrieved documents
         documents = []
 
         for result in results:

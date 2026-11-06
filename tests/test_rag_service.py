@@ -1,3 +1,4 @@
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -6,6 +7,7 @@ from app.rag_service import RAGService
 from app.embedding_service import EmbeddingService
 from app.retrieval_service import RetrievalService
 from app.llm_service import LLMService
+from app.reranker import Reranker
 
 
 @pytest.fixture
@@ -13,16 +15,18 @@ def rag_service():
 
     retrieval_service = MagicMock()
     llm_service = MagicMock()
+    reranker = MagicMock()
 
     return RAGService(
         retrieval_service=retrieval_service,
-        llm_service=llm_service
+        llm_service=llm_service,
+        reranker=reranker
     )
 
 
 def test_ask_question_success(rag_service):
 
-    rag_service.retrieval_service.retrieve_documents.return_value = [
+    retrieved_documents = [
         {
             "content": "Apple reported net sales of $391 billion.",
             "company": "Apple",
@@ -33,6 +37,19 @@ def test_ask_question_success(rag_service):
             "score": 0.85
         }
     ]
+
+    reranked_documents = [
+        {
+            **retrieved_documents[0],
+            "rerank_score": 10.5
+        }
+    ]
+
+    rag_service.retrieval_service.retrieve_documents.return_value = (
+        retrieved_documents
+    )
+
+    rag_service.reranker.rerank.return_value = reranked_documents
 
     rag_service.llm_service.generate_answer.return_value = (
         "Apple reported net sales of $391 billion in 2024."
@@ -51,8 +68,10 @@ def test_ask_question_success(rag_service):
     assert len(result["sources"]) == 1
     assert result["sources"][0]["company"] == "Apple"
     assert result["sources"][0]["page_number"] == 15
+    assert result["sources"][0]["rerank_score"] == 10.5
 
     rag_service.retrieval_service.retrieve_documents.assert_called_once()
+    rag_service.reranker.rerank.assert_called_once()
     rag_service.llm_service.generate_answer.assert_called_once()
 
 
@@ -65,6 +84,32 @@ def test_ask_question_no_documents(rag_service):
     )
 
     assert result["sources"] == []
+    assert result["invalid_citations"] == []
+
+    rag_service.reranker.rerank.assert_not_called()
+    rag_service.llm_service.generate_answer.assert_not_called()
+
+
+def test_ask_question_no_documents_after_reranking(rag_service):
+
+    rag_service.retrieval_service.retrieve_documents.return_value = [
+        {
+            "content": "Some retrieved content",
+            "company": "Apple",
+            "fiscal_year": 2024,
+            "source": "2024_Apple.pdf",
+            "page_number": 10
+        }
+    ]
+
+    rag_service.reranker.rerank.return_value = []
+
+    result = rag_service.ask_question(
+        question="What was Apple's revenue?"
+    )
+
+    assert result["sources"] == []
+    assert result["invalid_citations"] == []
 
     rag_service.llm_service.generate_answer.assert_not_called()
 
@@ -83,39 +128,28 @@ def test_ask_question_invalid_top_k(rag_service):
             top_k=0
         )
 
-@pytest.mark.integration
-def test_rag_workflow_real_services():
 
-    embedding_service = EmbeddingService()
+def test_ask_question_invalid_retrieval_k(rag_service):
 
-    retrieval_service = RetrievalService(
-        embedding_service=embedding_service
-    )
+    with pytest.raises(ValueError, match="retrieval_k must be greater than zero"):
+        rag_service.ask_question(
+            question="What was Apple's revenue?",
+            retrieval_k=0
+        )
 
-    llm_service = LLMService()
 
-    rag_service = RAGService(
-        retrieval_service=retrieval_service,
-        llm_service=llm_service
-    )
+def test_ask_question_retrieval_k_less_than_top_k(rag_service):
 
-    result = rag_service.ask_question(
-        question="What were Apple's major sources of revenue in 2024?",
-        company="Apple",
-        fiscal_year=2024,
-        top_k=3
-    )
+    with pytest.raises(
+        ValueError,
+        match="retrieval_k must be greater than or equal to top_k"
+    ):
+        rag_service.ask_question(
+            question="What was Apple's revenue?",
+            top_k=5,
+            retrieval_k=3
+        )
 
-    print("\nGenerated Answer:")
-    print(result["answer"])
-
-    print("\nSources:")
-    for source in result["sources"]:
-        print(source)
-
-    assert result["answer"]
-    assert len(result["sources"]) > 0
-    assert all(source["company"] == "Apple" for source in result["sources"])
 
 def test_validate_sources_all_valid(rag_service):
 
@@ -163,3 +197,51 @@ def test_validate_sources_invalid_citation(rag_service):
     )
 
     assert invalid == ["2024_Apple.pdf, Page 50"]
+
+
+@pytest.mark.integration
+def test_rag_workflow_real_services():
+
+    embedding_service = EmbeddingService()
+
+    retrieval_service = RetrievalService(
+        embedding_service=embedding_service
+    )
+
+    llm_service = LLMService()
+
+    reranker = Reranker()
+
+    rag_service = RAGService(
+        retrieval_service=retrieval_service,
+        llm_service=llm_service,
+        reranker=reranker
+    )
+
+    result = rag_service.ask_question(
+        question="What were Apple's major sources of revenue in 2024?",
+        company="Apple",
+        fiscal_year=2024,
+        top_k=3,
+        retrieval_k=10
+    )
+
+    print("\nGenerated Answer:")
+    print(result["answer"])
+
+    print("\nSources:")
+    for source in result["sources"]:
+        print(source)
+
+    assert result["answer"]
+    assert len(result["sources"]) > 0
+
+    assert all(
+        source["company"] == "Apple"
+        for source in result["sources"]
+    )
+
+    assert all(
+        "rerank_score" in source
+        for source in result["sources"]
+    )
