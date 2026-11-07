@@ -1,3 +1,21 @@
+import sys
+from pathlib import Path
+
+# Locate the project root
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Add project root to Python's import path
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# Debug information
+print("Project root:", PROJECT_ROOT)
+print("App folder exists:", (PROJECT_ROOT / "app").is_dir())
+print("App package exists:", (PROJECT_ROOT / "app" / "__init__.py").is_file())
+
+
+
+
+
 
 import streamlit as st
 

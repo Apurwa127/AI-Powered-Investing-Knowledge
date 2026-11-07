@@ -1,13 +1,37 @@
+
 # Environment variables and secrets
 .env
+.env.*
+!.env.example
 
-# Python virtual environment
+# Python virtual environments
 .venv/
 venv/
 
-# Python cache
+# Python cache and compiled files
 __pycache__/
 *.py[cod]
+*.pyo
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
 
 # IDE settings
 .idea/
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
